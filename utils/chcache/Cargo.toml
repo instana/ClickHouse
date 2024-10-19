@@ -12,3 +12,7 @@ serde = { version = "1.0.210", features = ["serde_derive"] }
 tokio = { version = "1.40.0", features = ["full"] }
 toml = "0.8.19"
 xdg = "2.5.2"
+
+[[bin]]
+name = "chcache"
+path = "src/main.rs"  # FIXME
