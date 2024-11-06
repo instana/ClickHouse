@@ -33,6 +33,8 @@ public:
 
     String getName() const override { return name; }
 
+    const StoragePtr & getStorage() const { return storage; }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:

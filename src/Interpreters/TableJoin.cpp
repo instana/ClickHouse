@@ -33,6 +33,7 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <ranges>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -41,6 +42,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_join_right_table_sorting;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
     extern const SettingsUInt64 default_max_bytes_in_join;
@@ -143,7 +145,56 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
+    , enable_analyzer(settings[Setting::allow_experimental_analyzer])
 {
+}
+
+
+TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness, const Names & key_names_right)
+    : size_limits(limits)
+    , default_max_bytes(0)
+    , join_use_nulls(use_nulls)
+    , join_algorithm({JoinAlgorithm::DEFAULT})
+{
+    clauses.emplace_back().key_names_right = key_names_right;
+    table_join.kind = kind;
+    table_join.strictness = strictness;
+}
+
+
+JoinKind TableJoin::kind() const
+{
+    if (join_info)
+        return join_info->kind;
+    return table_join.kind;
+}
+
+void TableJoin::setKind(JoinKind kind)
+{
+    if (join_info)
+        join_info->kind = kind;
+    table_join.kind = kind;
+}
+
+JoinStrictness TableJoin::strictness() const
+{
+    if (join_info)
+        return join_info->strictness;
+    return table_join.strictness;
+}
+
+bool TableJoin::hasUsing() const
+{
+    if (join_info)
+        return join_info->expression.is_using;
+    return table_join.using_expression_list != nullptr;
+}
+
+bool TableJoin::hasOn() const
+{
+    if (join_info)
+        return !join_info->expression.is_using;
+    return table_join.on_expression != nullptr;
 }
 
 void TableJoin::resetKeys()
@@ -161,6 +212,8 @@ void TableJoin::resetCollected()
     clauses.clear();
     columns_from_joined_table.clear();
     columns_added_by_join.clear();
+    columns_from_left_table.clear();
+    result_columns_from_left_table.clear();
     original_names.clear();
     renames.clear();
     left_type_map.clear();
@@ -201,6 +254,19 @@ size_t TableJoin::rightKeyInclusion(const String & name) const
     for (const auto & clause : clauses)
         count += std::count(clause.key_names_right.begin(), clause.key_names_right.end(), name);
     return count;
+}
+
+void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns)
+{
+    columns_from_left_table = std::move(left_output_columns);
+    columns_from_joined_table = std::move(right_output_columns);
+}
+
+const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
+{
+    if (side == JoinTableSide::Left)
+        return result_columns_from_left_table;
+    return columns_added_by_join;
 }
 
 void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
@@ -351,9 +417,41 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
     return forceNullableRight() && JoinCommon::canBecomeNullable(column_type);
 }
 
+void TableJoin::setUsedColumns(const Names & column_names)
+{
+    std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> left_columns_idx;
+    for (auto it = columns_from_left_table.begin(); it != columns_from_left_table.end(); ++it)
+        left_columns_idx[it->name] = it;
+
+    std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> right_columns_idx;
+    for (auto it = columns_from_joined_table.begin(); it != columns_from_joined_table.end(); ++it)
+        right_columns_idx[it->name] = it;
+
+    for (const auto & column_name : column_names)
+    {
+        if (auto lit = left_columns_idx.find(column_name); lit != left_columns_idx.end())
+            setUsedColumn(*lit->second, JoinTableSide::Left);
+        else if (auto rit = right_columns_idx.find(column_name); rit != right_columns_idx.end())
+            setUsedColumn(*rit->second, JoinTableSide::Right);
+        else
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
+                fmt::join(columns_from_left_table | std::views::transform([](const auto & col) { return col.name; }), ", "),
+                fmt::join(columns_from_joined_table | std::views::transform([](const auto & col) { return col.name; }), ", "));
+    }
+}
+
+void TableJoin::setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side)
+{
+    if (side == JoinTableSide::Left)
+        result_columns_from_left_table.push_back(joined_column);
+    else
+        columns_added_by_join.push_back(joined_column);
+}
+
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    columns_added_by_join.emplace_back(joined_column);
+    setUsedColumn(joined_column, JoinTableSide::Right);
 }
 
 NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
@@ -974,9 +1072,9 @@ bool TableJoin::allowParallelHashJoin() const
         return false;
     if (!right_storage_name.empty())
         return false;
-    if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
+    if (kind() != JoinKind::Left && kind() != JoinKind::Inner)
         return false;
-    if (table_join.strictness == JoinStrictness::Asof)
+    if (strictness() == JoinStrictness::Asof)
         return false;
     if (isSpecialStorage() || !oneDisjunct())
         return false;
@@ -995,5 +1093,10 @@ size_t TableJoin::getMaxMemoryUsage() const
     return max_memory_usage;
 }
 
+void TableJoin::assertEnableEnalyzer() const
+{
+    if (!enable_analyzer)
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
+}
 
 }

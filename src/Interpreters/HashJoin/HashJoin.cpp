@@ -115,6 +115,11 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
+    for (auto & column : right_sample_block)
+    {
+        if (!column.column)
+            column.column = column.type->createColumn();
+    }
     LOG_TRACE(log, "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id, TableJoin::formatClauses(table_join->getClauses(), true), data->type, kind, strictness, right_sample_block.dumpStructure());
 
@@ -383,6 +388,16 @@ size_t HashJoin::getTotalByteCount() const
     return res;
 }
 
+bool HashJoin::isUsedByAnotherAlgorithm() const
+{
+    return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+}
+
+bool HashJoin::canRemoveColumnsFromLeftBlock() const
+{
+    return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm();
+}
+
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
     if (isCrossOrComma(kind))
@@ -394,8 +409,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 
     bool multiple_disjuncts = !table_join->oneDisjunct();
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
-    bool save_key_columns = table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) ||
-                            table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) ||
+    bool save_key_columns = isUsedByAnotherAlgorithm() ||
                             isRightOrFull(kind) ||
                             multiple_disjuncts ||
                             table_join->getMixedJoinExpression();
@@ -909,6 +923,7 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: >>> [{}]", __FILE__, __LINE__, block.dumpNames());
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
@@ -923,6 +938,8 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     if (kind == JoinKind::Cross)
     {
         joinBlockImplCross(block, not_processed);
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: <<< [{}]", __FILE__, __LINE__, block.dumpNames());
+
         return;
     }
 
@@ -970,6 +987,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: <<< [{}]", __FILE__, __LINE__, block.dumpNames());
 }
 
 HashJoin::~HashJoin()
@@ -1228,7 +1246,10 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
+
     size_t left_columns_count = left_sample_block.columns();
+    if (canRemoveColumnsFromLeftBlock())
+        left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
     if (!flag_per_row)
