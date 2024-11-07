@@ -211,7 +211,11 @@ JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, Ac
     ActionsDAG::NodeRawConstPtrs nodes;
     nodes.reserve(conditions.size());
     for (const auto & condition : conditions)
+    {
+        if (!condition.node)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition node is nullptr");
         nodes.push_back(condition.node);
+    }
 
     const auto & result_node = actions_dag.addFunction(and_function, nodes, {});
     actions_dag.addOrReplaceInOutputs(result_node);
@@ -307,6 +311,14 @@ void addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::Join
             join_condition.residual_conditions.push_back(predicate_action);
         }
     }
+
+    if (new_predicates.empty())
+    {
+        WriteBufferFromOwnString buf;
+        formatJoinCondition(join_condition, buf);
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "No equality condition found in JOIN ON expression {}", buf.str());
+    }
+
     join_condition.predicates = std::move(new_predicates);
 }
 
@@ -351,14 +363,22 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinCondition & join_cond
 JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_expression, JoinExpressionActions & expression_actions, const ContextPtr & query_context)
 {
     std::vector<JoinActionRef> all_conditions;
-    all_conditions.push_back(buildSingleActionForJoinExpression(join_expression.condition, expression_actions, query_context));
+
+    if (auto condition = buildSingleActionForJoinExpression(join_expression.condition, expression_actions, query_context))
+        all_conditions.push_back(condition);
+
     for (const auto & join_condition : join_expression.disjunctive_conditions)
-        all_conditions.push_back(buildSingleActionForJoinExpression(join_condition, expression_actions, query_context));
+        if (auto condition = buildSingleActionForJoinExpression(join_condition, expression_actions, query_context))
+            all_conditions.push_back(condition);
+
     return concatConditions(all_conditions, expression_actions.post_join_actions, query_context);
 }
 
 JoinPtr JoinStepLogical::chooseJoinAlgorithm(JoinActionRef & left_filter, JoinActionRef & right_filter, JoinActionRef & post_filter, bool is_explain_logical)
 {
+    for (const auto & [name, value] : describeJoinActions(join_info))
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}: {}", __FILE__, __LINE__, name, value);
+
     const auto & settings = query_context->getSettingsRef();
 
     auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume(), query_context->getTempDataOnDisk());
@@ -483,9 +503,6 @@ JoinPtr JoinStepLogical::chooseJoinAlgorithm(JoinActionRef & left_filter, JoinAc
         expression_actions.left_pre_join_actions.getNamesAndTypesList(),
         expression_actions.right_pre_join_actions.getNamesAndTypesList());
     table_join->setUsedColumns(expression_actions.post_join_actions.getRequiredColumnsNames());
-
-    // table_join->setInputColumns(input_headers.at(0).getNamesAndTypesList(), input_headers.at(1).getNamesAndTypesList());
-    // table_join->setUsedColumns(output_header->getNames());
 
 
     Block right_sample_block(expression_actions.right_pre_join_actions.getResultColumns());

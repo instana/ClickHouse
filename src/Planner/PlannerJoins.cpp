@@ -385,7 +385,7 @@ void buildJoinClause(
     }
 }
 
-static QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
+QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
 {
     /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
       * If we do not ignore it, this function will be replaced by underlying constant.
