@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Tuple
 
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import CHCACHE_PASSWORD, REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+from env_helper import CHCACHE_PASSWORD, REPO_COPY, TEMP_PATH
 from pr_info import PRInfo
 from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
