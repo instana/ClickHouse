@@ -95,7 +95,7 @@ jobs:
           python3 fast_test_check.py
     secrets:
       secret_envs: |
-        CHCACHE_PASSWORD=${{secrets.CH_CACHE_PASSWORD}}
+        CHCACHE_PASSWORD=${{secrets.CHCACHE_PASSWORD}}
 
   ################################# Main stages #################################
   # for main CI chain
