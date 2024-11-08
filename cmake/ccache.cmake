@@ -25,7 +25,6 @@ elseif(COMPILER_CACHE STREQUAL "chcache")
     corrosion_import_crate(
         MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/utils/chcache/Cargo.toml
         LOCKED
-        FLAGS --offline
     )
     set_target_properties(chcache PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/programs/)
 
