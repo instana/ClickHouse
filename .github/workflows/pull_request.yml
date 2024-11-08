@@ -93,6 +93,9 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
           python3 fast_test_check.py
+    secrets:
+      secret_envs: |
+        CHCACHE_PASSWORD=${{secrets.CHCACHE_PASSWORD}}
 
   ################################# Main stages #################################
   # for main CI chain
