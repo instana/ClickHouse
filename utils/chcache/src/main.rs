@@ -12,17 +12,22 @@ struct Config {
 
 #[tokio::main]
 async fn main() {
-    let config_path = xdg::BaseDirectories::with_prefix("chcache")
-        .unwrap()
-        .place_config_file("config.toml")
-        .unwrap();
+    // let config_path = xdg::BaseDirectories::with_prefix("chcache")
+    //     .unwrap()
+    //     .place_config_file("config.toml")
+    //     .unwrap();
+    //
+    // if !config_path.exists() {
+    //     panic!("Config file not found at {}", config_path.display());
+    // }
 
-    if !config_path.exists() {
-        panic!("Config file not found at {}", config_path.display());
-    }
-
-    let config = fs::read_to_string(config_path).expect("Missing config file?");
-    let config: Config = toml::from_str(&config).expect("Unable to load config, is it a valid toml?");
+    // let config = fs::read_to_string(config_path).expect("Missing config file?");
+    // let config: Config = toml::from_str(&config).expect("Unable to load config, is it a valid toml?");
+    let config: Config = Config {
+        hostname: std::env::var("CH_HOSTNAME").unwrap(),
+        user: std::env::var("CH_USER").unwrap(),
+        password: std::env::var("CH_PASSWORD").unwrap(),
+    };
 
     env_logger::init();
 

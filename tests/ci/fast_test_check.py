@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Tuple
 
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+from env_helper import CHCACHE_PASSWORD, REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import PRInfo
 from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
@@ -32,10 +32,10 @@ def get_fasttest_cmd(
         "--network=host "  # required to get access to IAM credentials
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output "
         f"-e FASTTEST_SOURCE=/repo "
-        f"-e FASTTEST_CMAKE_FLAGS='-DCOMPILER_CACHE=sccache' "
+        f"-e FASTTEST_CMAKE_FLAGS='-DCOMPILER_CACHE=chcache' "
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} "
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
-        f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
+        f"-e CH_HOSTNAME='https://lr5v5i0nr3.eu-west-1.aws.clickhouse-staging.com' -e CH_USER=ci_builder -e CH_PASSWORD={CHCACHE_PASSWORD} "
         "-e stage=clone_submodules "
         f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/repo "
         f"--volume={output_path}:/test_output {image} /repo/tests/docker_scripts/fasttest_runner.sh"

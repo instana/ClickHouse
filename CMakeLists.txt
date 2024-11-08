@@ -592,6 +592,8 @@ endif()
 include (cmake/sanitize_targets.cmake)
 
 if (COMPILER_CACHE STREQUAL "chcache")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+
     get_all_targets(all_targets)
     set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
     foreach(target ${all_targets})

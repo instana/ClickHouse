@@ -15,6 +15,7 @@ RUN apt-get update \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
         lsof \
+        rustc \
         ninja-build \
         odbcinst \
         psmisc \
