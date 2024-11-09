@@ -442,7 +442,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument(
         "--cache",
-        choices=("ccache", "sccache", ""),
+        choices=("ccache", "sccache", "chcache", ""),
         default="",
         help="ccache or sccache for objects caching; sccache uses only S3 buckets",
     )
