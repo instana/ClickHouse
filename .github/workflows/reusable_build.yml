@@ -59,6 +59,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           ${{inputs.additional_envs}}
           ${{secrets.secret_envs}}
+          CHCACHE_PASSWORD=${{secrets.CHCACHE_PASSWORD}}
           DOCKER_TAG<<DOCKER_JSON
           ${{ toJson(fromJson(inputs.data).docker_data.images) }}
           DOCKER_JSON
