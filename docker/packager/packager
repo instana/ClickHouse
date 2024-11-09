@@ -325,7 +325,9 @@ def parse_env_variables(
 
     if cache == "chcache":
         cmake_flags.append("-DCOMPILER_CACHE=chcache")
-        result.append(f"CHCACHE_PASSWORD={chcache_password}")
+        result.append(f"CH_PASSWORD={chcache_password}")
+        result.append("CH_USER=ci_builder")
+        result.append("CH_HOSTNAME=https://lr5v5i0nr3.eu-west-1.aws.clickhouse-staging.com")
 
     if clang_tidy:
         # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
