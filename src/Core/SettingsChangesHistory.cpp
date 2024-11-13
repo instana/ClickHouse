@@ -60,6 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+                {"parallel_replicas_for_cluster_engines", true, true, "New setting"},
         }
     },
     {"24.11",
