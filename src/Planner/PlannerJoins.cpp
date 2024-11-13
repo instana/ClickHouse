@@ -395,6 +395,8 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
       * ON (t1.id = t2.id) AND 1 != 1 AND (t1.value >= t1.value);
       */
     const auto & join_expression = join_node.getJoinExpression();
+    if (!join_expression)
+        return nullptr;
     const auto * constant_join_expression = join_expression->as<ConstantNode>();
     if (constant_join_expression && constant_join_expression->hasSourceExpression())
         return constant_join_expression->getSourceExpression();
@@ -761,6 +763,22 @@ bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContex
     return false;
 }
 
+void buildJoinOnCondition(const QueryTreeNodePtr & node, JoinInfoBuildContext & builder_context, JoinCondition & join_condition)
+{
+    auto & using_list = node->as<ListNode &>();
+    for (auto & using_node : using_list.getNodes())
+    {
+        auto & using_column_node = using_node->as<ColumnNode &>();
+        auto & inner_columns_list = using_column_node.getExpressionOrThrow()->as<ListNode &>();
+        chassert(inner_columns_list.getNodes().size() == 2);
+
+        join_condition.predicates.emplace_back(JoinPredicate{
+            builder_context.addExpression(inner_columns_list.getNodes().at(0), JoinInfoBuildContext::JoinSource::Left),
+            builder_context.addExpression(inner_columns_list.getNodes().at(1), JoinInfoBuildContext::JoinSource::Right),
+            PredicateOperator::Equals});
+    }
+}
+
 void buildJoinCondition(const QueryTreeNodePtr & node, JoinInfoBuildContext & builder_context, JoinCondition & join_condition)
 {
     std::string function_name;
@@ -820,28 +838,36 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     const auto & right_columns = right_header.getColumnsWithTypeAndName();
     JoinInfoBuildContext build_context(join_node, left_columns, right_columns, planner_context);
 
-    if (join_node.getJoinExpression() == nullptr)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}:{} TODO (CROSS JOIN): {}", __FILE__, __LINE__, join_node.formatASTForErrorMessage());
-
-    if (join_node.isUsingJoinExpression())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}:{} TODO: {}", __FILE__, __LINE__, join_node.formatASTForErrorMessage());
-
-    if (tryExtractConstantFromConditionNode(join_node.getJoinExpression()).has_value())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}:{} TODO: {}", __FILE__, __LINE__, join_node.formatASTForErrorMessage());
+    auto join_expression_constant = tryExtractConstantFromConditionNode(join_node.getJoinExpression());
+    build_context.result_join_info.expression.constant_value = join_expression_constant;
 
     auto join_expression_node = getJoinExpressionFromNode(join_node);
 
-    const auto * function_node = join_expression_node->as<FunctionNode>();
-    if (!function_node)
-        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-            "JOIN {} join expression expected function",
-            join_node.formatASTForErrorMessage());
-
-    buildDisjunctiveJoinConditions(join_expression_node, build_context, build_context.result_join_info.expression.disjunctive_conditions);
-    if (!build_context.result_join_info.expression.disjunctive_conditions.empty())
+    /// CROSS JOIN: doesn't have expression
+    if (join_expression_node == nullptr)
     {
-        build_context.result_join_info.expression.condition = build_context.result_join_info.expression.disjunctive_conditions.back();
-        build_context.result_join_info.expression.disjunctive_conditions.pop_back();
+        if (!isCrossOrComma(join_node.getKind()))
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Missing join expression in {}", join_node.formatASTForErrorMessage());
+    }
+    /// USING
+    else if (join_node.isUsingJoinExpression())
+    {
+        buildJoinOnCondition(join_expression_node, build_context, build_context.result_join_info.expression.condition);
+    }
+    /// JOIN ON some non-constant expression
+    else if (!join_expression_constant.has_value())
+    {
+        if (join_expression_node->getNodeType() != QueryTreeNodeType::FUNCTION)
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "JOIN {} join expression expected function",
+                join_node.formatASTForErrorMessage());
+
+        buildDisjunctiveJoinConditions(join_expression_node, build_context, build_context.result_join_info.expression.disjunctive_conditions);
+        if (!build_context.result_join_info.expression.disjunctive_conditions.empty())
+        {
+            build_context.result_join_info.expression.condition = build_context.result_join_info.expression.disjunctive_conditions.back();
+            build_context.result_join_info.expression.disjunctive_conditions.pop_back();
+        }
     }
 
     return std::make_unique<JoinStepLogical>(

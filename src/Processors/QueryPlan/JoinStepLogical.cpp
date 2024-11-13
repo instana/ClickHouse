@@ -38,8 +38,8 @@ std::string_view toString(PredicateOperator op)
 {
     switch (op)
     {
-        case PredicateOperator::Equal: return "=";
-        case PredicateOperator::NullSafeEqual: return "<=>";
+        case PredicateOperator::Equals: return "=";
+        case PredicateOperator::NullSafeEquals: return "<=>";
         case PredicateOperator::Less: return "<";
         case PredicateOperator::LessOrEquals: return "<=";
         case PredicateOperator::Greater: return ">";
@@ -53,8 +53,8 @@ std::string toFunctionName(PredicateOperator op)
 {
     switch (op)
     {
-        case PredicateOperator::Equal: return "equals";
-        case PredicateOperator::NullSafeEqual: return "isNotDistinctFrom";
+        case PredicateOperator::Equals: return "equals";
+        case PredicateOperator::NullSafeEquals: return "isNotDistinctFrom";
         case PredicateOperator::Less: return "less";
         case PredicateOperator::LessOrEquals: return "lessOrEquals";
         case PredicateOperator::Greater: return "greater";
@@ -300,9 +300,9 @@ void addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::Join
     for (size_t i = 0; i < join_condition.predicates.size(); ++i)
     {
         const auto & predicate = join_condition.predicates[i];
-        if (PredicateOperator::Equal == predicate.op || PredicateOperator::NullSafeEqual == predicate.op)
+        if (PredicateOperator::Equals == predicate.op || PredicateOperator::NullSafeEquals == predicate.op)
         {
-            table_join_clause.addKey(predicate.left_node.column_name, predicate.right_node.column_name, PredicateOperator::NullSafeEqual == predicate.op);
+            table_join_clause.addKey(predicate.left_node.column_name, predicate.right_node.column_name, PredicateOperator::NullSafeEquals == predicate.op);
             new_predicates.push_back(predicate);
         }
         else if (post_join_actions)
@@ -393,10 +393,14 @@ JoinPtr JoinStepLogical::chooseJoinAlgorithm(JoinActionRef & left_filter, JoinAc
     }, prepared_join_storage);
 
     auto & table_join_clauses = table_join->getClauses();
-    addJoinConditionToTableJoin(
-        join_expression.condition, table_join_clauses.emplace_back(),
-        join_info.strictness != JoinStrictness::Asof ? &expression_actions.post_join_actions : nullptr,
-        query_context);
+
+    if (!isCrossOrComma(join_info.kind))
+    {
+        addJoinConditionToTableJoin(
+            join_expression.condition, table_join_clauses.emplace_back(),
+            join_info.strictness != JoinStrictness::Asof ? &expression_actions.post_join_actions : nullptr,
+            query_context);
+    }
 
     if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions, query_context))
     {

@@ -15,8 +15,8 @@ namespace DB
 
 enum class PredicateOperator : UInt8
 {
-    Equal,
-    NullSafeEqual,
+    Equals,
+    NullSafeEquals,
     Less,
     LessOrEquals,
     Greater,
@@ -26,9 +26,9 @@ enum class PredicateOperator : UInt8
 inline std::optional<PredicateOperator> getJoinPredicateOperator(const String & func_name)
 {
     if (func_name == "equals")
-        return PredicateOperator::Equal;
+        return PredicateOperator::Equals;
     if (func_name == "isNotDistinctFrom")
-        return PredicateOperator::NullSafeEqual;
+        return PredicateOperator::NullSafeEquals;
     if (func_name == "less")
         return PredicateOperator::Less;
     if (func_name == "greater")
@@ -44,8 +44,8 @@ inline PredicateOperator reversePredicateOperator(PredicateOperator op)
 {
     switch (op)
     {
-        case PredicateOperator::Equal: return PredicateOperator::Equal;
-        case PredicateOperator::NullSafeEqual: return PredicateOperator::NullSafeEqual;
+        case PredicateOperator::Equals: return PredicateOperator::Equals;
+        case PredicateOperator::NullSafeEquals: return PredicateOperator::NullSafeEquals;
         case PredicateOperator::Less: return PredicateOperator::Greater;
         case PredicateOperator::Greater: return PredicateOperator::Less;
         case PredicateOperator::LessOrEquals: return PredicateOperator::GreaterOrEquals;
@@ -118,6 +118,9 @@ struct JoinExpression
 
     /// Indicates if the join expression is defined with the USING clause
     bool is_using = false;
+
+    /// Set if JOIN ON expression was folded to a single constant on analysis stage
+    std::optional<bool> constant_value = {};
 };
 
 struct JoinInfo
